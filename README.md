@@ -8,7 +8,7 @@
   <img src="https://img.shields.io/badge/License-MIT-235750?style=for-the-badge" alt="MIT License">
   <img src="https://img.shields.io/badge/100%25-Client--Side-235750?style=for-the-badge" alt="100% Client-Side">
   <img src="https://img.shields.io/badge/Backend-None-7b5800?style=for-the-badge" alt="No Backend">
-  <a href="https://example-signal.netlify.app"><img src="https://img.shields.io/badge/Live-Demo-8e2e24?style=for-the-badge" alt="Live Demo"></a>
+  <a href="https://signal-exe.netlify.app"><img src="https://img.shields.io/badge/Live-Demo-8e2e24?style=for-the-badge" alt="Live Demo"></a>
 </p>
 
 **Signal** reads your Meta Ads export and diagnoses every campaign — *healthy, caution, or critical* — against your own thresholds.
@@ -18,7 +18,7 @@ If you run Meta ads and want a 3-second read on what's working and what's bleedi
 > **Your data never leaves your browser.** 100% client-side — no upload, no account, no key.
 
 <p align="center">
-  <a href="https://example-signal.netlify.app">Live Demo</a> ·
+  <a href="https://signal-exe.netlify.app">Live Demo</a> ·
   <a href="#-how-to-use">How to use</a> ·
   <a href="#-troubleshooting">Troubleshooting</a> ·
   <a href="#-roadmap">Roadmap</a> ·
