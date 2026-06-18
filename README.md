@@ -84,7 +84,7 @@ Swapping the live data source in is a **one-line change** at a single call site.
 ## 🗺 Roadmap
 
 - [x] **CSV diagnostics** — drop a Meta export, get the full diagnosis dashboard
-- [ ] **Calibration tab** — live sliders to tune per-objective thresholds
+- [x] **Calibration tab** — live sliders to tune per-objective thresholds
 - [ ] **Meta API live mode** — connect an account directly (private shell adapter)
 
 ## 📄 License
