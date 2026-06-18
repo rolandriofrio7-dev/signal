@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SIGNAL — Campaign Diagnostics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<!-- CSV parsing, client-side only (no data leaves the browser) -->
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<style>
+  /* ---- Signal design tokens (from DESIGN.md) ---- */
+  :root{
+    --surface:#fcf9f8;            /* bone */
+    --surface-container-low:#f6f3f2;
+    --surface-container:#f0eded;
+    --surface-container-lowest:#ffffff;
+    --ink:#1c1b1b;               /* on-surface */
+    --on-surface-variant:#404946;
+    --outline:#707977;
+    --outline-variant:#bfc8c5;   /* hairline */
+    --teal:#235750;              /* healthy / primary */
+    --amber:#7b5800;             /* caution / secondary */
+    --coral:#8e2e24;             /* critical / tertiary */
+    --sans:"Hanken Grotesk", system-ui, -apple-system, sans-serif;
+    --mono:"JetBrains Mono", ui-monospace, Menlo, monospace;
+    --grid:rgba(28,27,27,.05);
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; }
+  body{
+    background-color:var(--surface);
+    background-image:
+      linear-gradient(to right, var(--grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+    background-size:22px 22px;
+    color:var(--ink);
+    font-family:var(--sans);
+    font-size:16px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  .wrap{ max-width:1100px; margin:0 auto; padding:0 20px 80px; }
+
+  /* ---- header ---- */
+  header{
+    position:sticky; top:0; z-index:10;
+    background:rgba(252,249,248,.86); backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--outline-variant);
+  }
+  .header-in{ max-width:1100px; margin:0 auto; padding:16px 20px 0; }
+  .header-top{ display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
+  .brand{ display:flex; align-items:center; gap:10px; font-size:26px; font-weight:700; letter-spacing:-.02em; }
+  .brand .pip{ width:9px; height:9px; border-radius:50%; background:var(--teal); animation:pulse 2s cubic-bezier(.4,0,.6,1) infinite; }
+  .brand-sub{ font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--outline); }
+  @keyframes pulse{ 0%,100%{ opacity:1; transform:scale(1);} 50%{ opacity:.4; transform:scale(1.25);} }
+
+  /* ---- tab bar (tab-ready: Calibration drops in next) ---- */
+  .tabs{ display:flex; gap:2px; margin-top:14px; }
+  .tab{ font-family:var(--sans); font-size:12px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+    color:var(--outline); background:none; border:0; border-bottom:2px solid transparent;
+    padding:12px 4px; margin-right:18px; cursor:pointer; display:inline-flex; align-items:center; gap:7px; }
+  .tab:hover:not(:disabled){ color:var(--ink); }
+  .tab.active{ color:var(--ink); border-bottom-color:var(--teal); }
+  .tab:disabled{ cursor:not-allowed; opacity:.55; }
+  .tab .soon{ font-family:var(--mono); font-size:9px; font-weight:500; letter-spacing:.1em;
+    color:var(--outline); border:1px solid var(--outline-variant); border-radius:999px; padding:1px 6px; }
+
+  .caps{ font-family:var(--sans); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+  .link{ font-family:var(--sans); font-size:inherit; color:var(--teal); background:none; border:0; padding:0;
+    cursor:pointer; font-weight:600; border-bottom:1px solid transparent; }
+  .link:hover{ border-bottom-color:var(--teal); }
+
+  /* ---- empty state / dropzone ---- */
+  .empty{ margin-top:40px; display:flex; flex-direction:column; gap:18px; }
+  .dropzone{ border:1px dashed var(--outline-variant); background:var(--surface-container-lowest);
+    padding:64px 24px; text-align:center; transition:border-color .15s, background .15s; }
+  .dropzone.drag{ border-color:var(--teal); background:#f1f6f4; }
+  .dz-mark{ width:34px; height:34px; margin:0 auto 16px; border:1px solid var(--outline-variant); border-radius:50%;
+    display:grid; place-items:center; color:var(--teal); font-family:var(--mono); font-size:18px; }
+  .dz-title{ font-size:18px; font-weight:600; color:var(--ink); }
+  .dz-sub{ margin-top:6px; font-size:14px; color:var(--on-surface-variant); }
+  .dz-foot{ display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  .dz-foot .hint{ font-family:var(--mono); font-size:11px; color:var(--outline); letter-spacing:.02em; }
+
+  /* ---- error (interface voice, not an apology) ---- */
+  .errbox{ margin-top:40px; display:flex; gap:14px; align-items:flex-start;
+    border:1px solid var(--coral); background:#fceeec; padding:18px 20px; }
+  .err-icon{ flex:0 0 auto; width:22px; height:22px; border-radius:50%; background:var(--coral); color:#fff;
+    font-family:var(--mono); font-weight:700; display:grid; place-items:center; font-size:14px; }
+  .err-msg{ color:var(--ink); font-size:15px; font-weight:500; line-height:1.4; }
+  .errbox .link{ margin-top:8px; color:var(--coral); }
+  .errbox .link:hover{ border-bottom-color:var(--coral); }
+
+  /* ---- results toolbar ---- */
+  .toolbar{ margin-top:28px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  .toolbar .src{ font-family:var(--mono); font-size:11px; letter-spacing:.04em; color:var(--outline); }
+  .toolbar .src b{ color:var(--ink); font-weight:700; }
+
+  /* ---- summary strip ---- */
+  .summary{ margin-top:14px; display:flex; flex-wrap:wrap; gap:0;
+    border:1px solid var(--outline-variant); background:var(--surface-container-lowest); }
+  .summary .cell{ flex:1 1 0; min-width:120px; padding:16px 20px; display:flex; flex-direction:column; gap:6px; }
+  .summary .cell + .cell{ border-left:1px solid var(--outline-variant); }
+  .summary .cell .k{ color:var(--outline); }
+  .summary .cell .v{ font-family:var(--mono); font-size:34px; font-weight:700; line-height:1; letter-spacing:-.02em; }
+  .summary .cell.total .v{ color:var(--ink); }
+  .summary .cell.healthy .v{ color:var(--teal); }
+  .summary .cell.caution .v{ color:var(--amber); }
+  .summary .cell.critical .v{ color:var(--coral); }
+  .summary .cell .meta{ font-family:var(--mono); font-size:11px; color:var(--outline); }
+
+  /* ---- instrument grid ---- */
+  .grid{ margin-top:14px; display:grid; gap:14px; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); }
+  .module{ border:1px solid var(--outline-variant); background:var(--surface-container-lowest); padding:18px 20px 20px; display:flex; flex-direction:column; gap:16px; }
+  .module .top{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  .module .title{ display:flex; flex-direction:column; gap:5px; }
+  .module .title .name{ font-size:15px; font-weight:600; line-height:1.25; color:var(--ink); }
+  .module .obj{ font-family:var(--mono); font-size:10px; letter-spacing:.1em; color:var(--outline); }
+
+  .status{ display:inline-flex; align-items:center; gap:7px; white-space:nowrap; }
+  .status .dot{ width:9px; height:9px; border-radius:50%; background:var(--outline); flex:0 0 auto; }
+  .status .lbl{ font-family:var(--sans); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--outline); }
+  .status.healthy .dot{ background:var(--teal); animation:pulse 2s cubic-bezier(.4,0,.6,1) infinite; }
+  .status.healthy .lbl{ color:var(--teal); }
+  .status.caution .dot{ background:var(--amber); animation:pulse 2s cubic-bezier(.4,0,.6,1) infinite; }
+  .status.caution .lbl{ color:var(--amber); }
+  .status.critical .dot{ background:var(--coral); animation:pulse 2s cubic-bezier(.4,0,.6,1) infinite; }
+  .status.critical .lbl{ color:var(--coral); }
+  .status.idle .dot{ background:var(--outline-variant); }
+
+  .readout{ display:flex; align-items:baseline; gap:10px; padding:6px 0 2px; border-bottom:1px solid var(--outline-variant); }
+  .readout .big{ font-family:var(--mono); font-size:46px; font-weight:700; line-height:.9; letter-spacing:-.03em; }
+  .readout.healthy .big{ color:var(--teal); }
+  .readout.caution .big{ color:var(--amber); }
+  .readout.critical .big{ color:var(--coral); }
+  .readout.idle .big{ color:var(--on-surface-variant); }
+  .readout .big-unit{ font-family:var(--mono); font-size:14px; color:var(--on-surface-variant); }
+  .readout .big-cap{ margin-left:auto; font-family:var(--sans); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--outline); }
+
+  .stats{ display:grid; grid-template-columns:repeat(3, 1fr); gap:1px; background:var(--outline-variant); border:1px solid var(--outline-variant); }
+  .stats .s{ background:var(--surface-container-lowest); padding:11px 12px; display:flex; flex-direction:column; gap:4px; }
+  .stats .s .k{ font-family:var(--sans); font-size:10px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--outline); }
+  .stats .s .v{ font-family:var(--mono); font-size:14px; font-weight:500; color:var(--ink); }
+
+  footer{ margin-top:32px; font-family:var(--mono); font-size:11px; color:var(--outline); letter-spacing:.03em; }
+  [hidden]{ display:none !important; }
+</style>
+</head>
+<body>
+<header>
+  <div class="header-in">
+    <div class="header-top">
+      <span class="brand">SIGNAL <span class="pip"></span></span>
+      <span class="brand-sub" id="sub">campaign diagnostics</span>
+    </div>
+    <nav class="tabs" aria-label="Sections">
+      <button class="tab active" data-tab="diagnostics" aria-current="page">Diagnostics</button>
+      <button class="tab" data-tab="calibration" disabled title="Coming next">Calibration <span class="soon">soon</span></button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- empty / upload state -->
+  <section class="empty" id="empty">
+    <div class="dropzone" id="dropzone">
+      <div class="dz-mark">↑</div>
+      <div class="dz-title">Drop a Meta Ads CSV export</div>
+      <div class="dz-sub">or <button class="link" id="browse" type="button">browse your files</button></div>
+      <input type="file" id="fileInput" accept=".csv,text/csv" hidden />
+    </div>
+    <div class="dz-foot">
+      <button class="link" id="trySample" type="button">Try sample data</button>
+      <span class="hint">100% in your browser — your data never leaves this device.</span>
+    </div>
+  </section>
+
+  <!-- error state -->
+  <section class="errbox" id="error" hidden>
+    <span class="err-icon">!</span>
+    <div>
+      <div class="err-msg" id="errMsg"></div>
+      <button class="link" id="errRetry" type="button">Choose another file</button>
+    </div>
+  </section>
+
+  <!-- results -->
+  <section id="results" hidden>
+    <div class="toolbar">
+      <span class="src" id="srcLabel"></span>
+      <button class="link" id="reset" type="button">Load a different CSV</button>
+    </div>
+    <section class="summary" id="summary" aria-label="Diagnosis summary"></section>
+    <section class="grid" id="grid" aria-label="Campaign instruments"></section>
+  </section>
+
+  <footer>100% client-side · your data never leaves the browser · no account, no upload</footer>
+</main>
+
+<script type="module">
+  import { diagnose } from "./engine/scoring.js";
+  import { DEFAULT_THRESHOLDS } from "./engine/config.js";
+  import { parseCsv, CsvError } from "./engine/adapters/csvAdapter.js";
+
+  // Single source of grading config; the Calibration tab will mutate this.
+  let activeThresholds = DEFAULT_THRESHOLDS;
+
+  const $ = (id) => document.getElementById(id);
+  const empty = $("empty"), errBox = $("error"), results = $("results");
+
+  const OBJ_LABEL = {
+    OUTCOME_SALES: "SALES", CONVERSIONS: "SALES",
+    OUTCOME_LEADS: "LEADS", LEAD_GENERATION: "LEADS",
+    OUTCOME_AWARENESS: "AWARENESS", BRAND_AWARENESS: "AWARENESS", REACH: "AWARENESS",
+  };
+
+  const usd = (n, dp = 2) =>
+    n == null ? "—" : "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
+  const int = (n) => (n == null ? "—" : Math.round(Number(n)).toLocaleString("en-US"));
+
+  function grade(row) {
+    const cfg = activeThresholds[row.objective];
+    if (!cfg) return { ...row, status: "idle", index: null, graded_on: null };
+    return diagnose(row, cfg);
+  }
+
+  function instrument(d) {
+    const isSales = d.result_type === "omni_purchase";
+    const isLeads = d.result_type === "lead";
+    const st = d.status;
+
+    let big, bigUnit = "", bigCap;
+    if (isSales) { big = (d.roas ?? 0).toFixed(1); bigUnit = "x"; bigCap = "ROAS"; }
+    else if (isLeads) { big = int(d.result); bigCap = "LEADS"; }
+    else { big = int(d.reach); bigCap = "REACH"; }
+
+    let midK, midV;
+    if (isSales) { midK = "Revenue"; midV = usd(d.revenue); }
+    else if (isLeads) { midK = "Cost / Lead"; midV = usd(d.cost_per_result); }
+    else { midK = "Impressions"; midV = int(d.impressions); }
+
+    const el = document.createElement("article");
+    el.className = "module";
+    el.dataset.status = st;
+    el.innerHTML = `
+      <div class="top">
+        <div class="title">
+          <span class="name">${d.campaign ?? "—"}</span>
+          <span class="obj">${OBJ_LABEL[d.objective] ?? d.objective ?? "—"}</span>
+        </div>
+        <span class="status ${st}"><span class="dot"></span><span class="lbl">${st}</span></span>
+      </div>
+      <div class="readout ${st}">
+        <span class="big">${big}</span><span class="big-unit">${bigUnit}</span>
+        <span class="big-cap">${bigCap}</span>
+      </div>
+      <div class="stats">
+        <div class="s"><span class="k">Spend</span><span class="v">${usd(d.spend)}</span></div>
+        <div class="s"><span class="k">${midK}</span><span class="v">${midV}</span></div>
+        <div class="s"><span class="k">Reach</span><span class="v">${int(d.reach)}</span></div>
+      </div>`;
+    return el;
+  }
+
+  function renderSummary(rows) {
+    const tally = { healthy: 0, caution: 0, critical: 0, idle: 0 };
+    rows.forEach((r) => { tally[r.status] = (tally[r.status] ?? 0) + 1; });
+    const cells = [
+      { cls: "total", k: "Campaigns", v: rows.length, meta: "monitored" },
+      { cls: "healthy", k: "Healthy", v: tally.healthy, meta: "on target" },
+      { cls: "caution", k: "Caution", v: tally.caution, meta: "watch" },
+      { cls: "critical", k: "Critical", v: tally.critical, meta: "intervene" },
+    ];
+    $("summary").innerHTML = cells.map((c) => `
+      <div class="cell ${c.cls}">
+        <span class="caps k">${c.k}</span>
+        <span class="v">${c.v}</span>
+        <span class="meta">${c.meta}${c.cls === "total" && tally.idle ? " · " + tally.idle + " idle" : ""}</span>
+      </div>`).join("");
+  }
+
+  function show(view) {
+    empty.hidden = view !== "empty";
+    errBox.hidden = view !== "error";
+    results.hidden = view !== "results";
+  }
+
+  function render(cleanRows, sourceLabel) {
+    const diagnosed = cleanRows.map(grade);
+    renderSummary(diagnosed);
+    $("grid").replaceChildren(...diagnosed.map(instrument));
+    $("srcLabel").innerHTML = sourceLabel;
+    show("results");
+    window.__signal = { cleanRows, diagnosed }; // verification hook
+    return diagnosed;
+  }
+
+  function showError(e) {
+    $("errMsg").textContent =
+      e instanceof CsvError ? e.message : "Could not read that file. Make sure it's a CSV exported from Ads Manager.";
+    show("error");
+    console.warn("[signal] csv error:", e?.code || "", e?.message || e);
+  }
+
+  async function ingest(input, sourceLabel) {
+    try {
+      const rows = await parseCsv(input);
+      render(rows, sourceLabel);
+    } catch (e) {
+      showError(e);
+    }
+  }
+
+  // ---- wiring ----
+  const dz = $("dropzone");
+  $("browse").addEventListener("click", () => $("fileInput").click());
+  $("fileInput").addEventListener("change", (e) => {
+    const f = e.target.files?.[0];
+    if (f) ingest(f, `source: <b>${f.name}</b>`);
+  });
+  ["dragenter", "dragover"].forEach((ev) =>
+    dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("drag"); }));
+  ["dragleave", "drop"].forEach((ev) =>
+    dz.addEventListener(ev, (e) => { e.preventDefault(); if (ev !== "drop" && e.target !== dz && dz.contains(e.relatedTarget)) return; dz.classList.remove("drag"); }));
+  dz.addEventListener("drop", (e) => {
+    const f = e.dataTransfer?.files?.[0];
+    if (f) ingest(f, `source: <b>${f.name}</b>`);
+  });
+  $("trySample").addEventListener("click", async () => {
+    try {
+      const res = await fetch("examples/sample-meta-export.csv");
+      if (!res.ok) throw new CsvError("sample", "Sample file not found. Serve the project from its root.");
+      await ingest(await res.text(), "source: <b>sample-meta-export.csv</b> (demo)");
+    } catch (e) { showError(e); }
+  });
+  $("reset").addEventListener("click", () => { $("fileInput").value = ""; show("empty"); });
+  $("errRetry").addEventListener("click", () => show("empty"));
+
+  // ---- boot ----
+  async function boot() {
+    const params = new URLSearchParams(location.search);
+    if (params.get("demo") === "fixtures") {
+      // fixtures path (raw Meta-shaped rows -> API parser) for testing
+      const [{ fetchInsights }, { parse }, { ACCOUNT }] = await Promise.all([
+        import("./engine/adapters/fixtureAdapter.js"),
+        import("./engine/parser.js"),
+        import("./engine/fixtures.js"),
+      ]);
+      $("sub").textContent = (ACCOUNT?.name || "fixtures") + " · demo";
+      const raw = await fetchInsights(ACCOUNT?.id, { since: "2026-05-01", until: "2026-05-31" });
+      render(parse(raw), "source: <b>fixtures</b> (demo)");
+    } else {
+      show("empty");
+    }
+  }
+  boot().catch((e) => showError(e));
+</script>
+</body>
+</html>

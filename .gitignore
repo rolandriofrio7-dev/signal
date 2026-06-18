@@ -1,0 +1,17 @@
+# dependencies
+node_modules/
+
+# secrets / environment — never commit
+.env
+.env.*
+*.key
+*.pem
+secrets.json
+
+# prototype (contains the old client-side Anthropic API-key flow — NOT shipped)
+prototype/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.log
