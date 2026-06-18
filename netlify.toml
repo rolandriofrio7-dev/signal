@@ -1,0 +1,5 @@
+# Signal is a static site — no build step. Netlify serves the repo root as-is,
+# with index.html at the root URL.
+[build]
+  publish = "."
+  command = ""
